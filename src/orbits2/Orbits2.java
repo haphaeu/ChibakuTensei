@@ -26,8 +26,9 @@ import java.util.ArrayList;
  * @author raf
  */
 public class Orbits2 implements KeyListener, 
-                               MouseMotionListener, 
-                               MouseWheelListener {
+                                MouseListener,
+                                MouseMotionListener, 
+                                MouseWheelListener {
 
     MyDrawPanel panel;
     ArrayList<Planet> planets = new ArrayList<>();
@@ -36,7 +37,8 @@ public class Orbits2 implements KeyListener,
     boolean paused = false;
     int timer = 10;
     
-    boolean showOrbits = false;
+    boolean showOrbits = true;
+    boolean addingPlanetMode = false;
     
     double scale;
     int shiftX, shiftY;
@@ -53,6 +55,7 @@ public class Orbits2 implements KeyListener,
         panel = new MyDrawPanel();
         frame.getContentPane().add(panel);
         frame.addKeyListener(this);
+        frame.addMouseListener(this);
         frame.addMouseMotionListener(this);
         frame.addMouseWheelListener(this);
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -72,11 +75,11 @@ public class Orbits2 implements KeyListener,
     }
     private void addPlanet() {
         planets.add(new Planet("nameless",
-                               pow(scale, 3), 
+                               100*pow(scale, 3), 
                                scale*10,
-                               new double[] {0.0, 0.0}, 
-                               new double[] {(mouseX-shiftX)*scale,
-                                             (mouseY-shiftY)*scale},
+                               new double[] {velX, velY}, 
+                               new double[] {(newPlanetX-shiftX)*scale,
+                                             (newPlanetY-shiftY)*scale},
                                Color.blue));
     }
     
@@ -111,14 +114,20 @@ public class Orbits2 implements KeyListener,
     }
     
     // KeyPressed interface
+    int newPlanetX, newPlanetY;
     @Override
     public void keyPressed(KeyEvent ev) {
         System.out.print("Key pressed: ");
         switch (ev.getKeyCode()) {
             case KeyEvent.VK_A:
-                System.out.println("A");
-                System.out.println("   add planet");
-                addPlanet();
+                if (!addingPlanetMode) {
+                    System.out.println("A");
+                    System.out.println("   adding planet");
+                    newPlanetX = mouseX;
+                    newPlanetY = mouseY;
+                    addingPlanetMode = true;
+                    paused = true;
+                }
                 break;
             case KeyEvent.VK_R:
                 System.out.println("R");
@@ -154,25 +163,53 @@ public class Orbits2 implements KeyListener,
     
     // MouseMotionListener interface
     int mouseX, mouseY;
+    int newPlanetSpeedX, newPlanetSpeedY;
+    double velX, velY;
     @Override
     public void mouseMoved(MouseEvent e){
         mouseX = e.getPoint().x - 1; 
         mouseY = e.getPoint().y - 24;
+        
+        // this is only used if addingPlanetMode == true
+        newPlanetSpeedX = mouseX;
+        newPlanetSpeedY = mouseY;
+        velX = (double)(newPlanetSpeedX - newPlanetX) / 50.0;
+        velY = (double)(newPlanetSpeedY - newPlanetY) / 50.0;
     }
     @Override public void mouseDragged(MouseEvent e) {}
    
     // MouseWheelInterface
     @Override public void mouseWheelMoved(MouseWheelEvent e) {
-       int notches = e.getWheelRotation();
-       if (notches > 0)
-           scale *= 1.1;
-       else if (notches < 0)
-           scale /= 1.1;
-       shiftX = (2*shiftX + mouseX) / 3;
-       shiftY = (2*shiftY + mouseY) / 3;
-       System.out.println("Rescale " + scale);
-       System.out.println(" Shift " + shiftX + " " + shiftY);
+        if (!addingPlanetMode) {
+            int notches = e.getWheelRotation();
+            if (notches > 0)
+                scale *= 1.1;
+            else if (notches < 0)
+                scale /= 1.1;
+            shiftX = (2*shiftX + mouseX) / 3;
+            shiftY = (2*shiftY + mouseY) / 3;
+            System.out.println("Rescale " + scale);
+            System.out.println(" Shift " + shiftX + " " + shiftY);
+        }
     }
+
+    // MouseListener
+    
+    @Override public void mouseClicked(MouseEvent me) {
+        if (addingPlanetMode){
+            addingPlanetMode = false;
+            paused = false;
+            addPlanet();
+        }
+    }
+
+    @Override public void mousePressed(MouseEvent me) {}
+
+    @Override public void mouseReleased(MouseEvent me) {}
+
+    @Override public void mouseEntered(MouseEvent me) {}
+
+    @Override public void mouseExited(MouseEvent me) {}
     
     // drawings
     class MyDrawPanel extends JPanel {
@@ -197,6 +234,13 @@ public class Orbits2 implements KeyListener,
                 int r = (int)(p.radius/scale);
                 gfx.fillOval(x, y, 2*r, 2*r);
             }
+            
+            if (addingPlanetMode) {
+                gfx.setColor(Color.gray);
+                gfx.drawString(String.format("Velocity %.2f %.2f", velX, velY), 10, 25);
+                gfx.drawLine(newPlanetX, newPlanetY,
+                             newPlanetSpeedX, newPlanetSpeedY);
+            }
 
             if (showOrbits) {
                 //if (debug) System.out.println("Showing orbits");
@@ -220,8 +264,8 @@ public class Orbits2 implements KeyListener,
 
 class Planet {
     //static final double G = 6.674e-11;
-    static final double G = 6.674e-11;
-    static double dt = 24*3600;
+    static final double G = 1.0;
+    static double dt = 1;
     
     boolean debug = false;
     
@@ -239,7 +283,7 @@ class Planet {
     
     public Planet(String nm, double m, double r,
                   double[] v, double[] p, Color c) {
-        System.out.println("Planet() " + nm);
+        System.out.println("new Planet() ");
         name = nm;
         mass = m;
         radius = r;
@@ -255,6 +299,7 @@ class Planet {
         System.out.println("   Position " + position[0] + " "+ position[1]);
         System.out.println("   Mass " + mass);
         System.out.println("   Radius " + radius);
+        System.out.println("   Speed " + velocity[0] + " " + velocity[1]);
     }
     
     public void updateVelocity(ArrayList<Planet> planets) {
