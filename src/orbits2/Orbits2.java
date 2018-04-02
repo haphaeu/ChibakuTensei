@@ -1,24 +1,19 @@
 /*
- * Orbits
+ * Orbits2
  *
- * Draws the orbits of planets around the sun.
+ * Planets orbiting around each other, or colliding =)
  *
- * Calculations are done using classic Newton mechanics with planet data
- * from NASA
- * https://nssdc.gsfc.nasa.gov/planetary/factsheet/
+ * Calculations are done using classic Newton mechanics.
  *
- * Calculations are done in real scale and scaled to fit canvas. Need to find a better way of
- * doing that, also implement zoom.
  *
  */
 package orbits2;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
+import static java.lang.Math.abs;
 import static java.lang.Math.pow;
 import static java.lang.Math.sqrt;
-//import static java.lang.Math.max;
-//import static java.lang.Math.abs;
 import java.util.ArrayList;
 
 /**
@@ -98,11 +93,14 @@ public class Orbits2 implements KeyListener,
             
             if (!paused) {
                 // First update the speed of all planets
-                for(Planet p: planets)
+                planets.forEach((p) -> {
                     p.updateVelocity(planets);
+                });
                 // and then update their positions
-                for(Planet p: planets)
+                planets.forEach((p) -> {
                     p.updateOrbit();
+                });
+                checkCollisions();
             }
             panel.repaint();
             try {
@@ -111,6 +109,24 @@ public class Orbits2 implements KeyListener,
                 System.out.println("OW NO! WHAT NOW??");
             }
         }
+    }
+    private void checkCollisions() {
+        for (int i=0; i < planets.size()-1; i++)
+            for (int j=i+1; j<planets.size(); j++) {
+                Planet pi = planets.get(i);
+                Planet pj = planets.get(j);
+                double dist = sqrt(pow(pi.position[0] - pj.position[0], 2) +
+                                   pow(pi.position[1] - pj.position[1], 2));
+                    if (dist < pi.radius + pj.radius) {
+                        System.out.println("Chibaku tensei!");
+                        pi.velocity[0] = (pi.velocity[0]*pi.mass + pj.velocity[0] * pj.mass) / (pi.mass + pj.mass);
+                        pi.velocity[1] = (pi.velocity[1]*pi.mass + pj.velocity[1] * pj.mass) / (pi.mass + pj.mass);
+                        pi.mass += pj.mass;
+                        pi.radius = pow(pow(pi.radius, 3) + pow(pj.radius, 3), 0.33333333);
+                        pi.orbitPoints = 0;
+                        planets.remove(pj);
+                    }
+            }
     }
     
     // KeyPressed interface
@@ -125,6 +141,8 @@ public class Orbits2 implements KeyListener,
                     System.out.println("   adding planet");
                     newPlanetX = mouseX;
                     newPlanetY = mouseY;
+                    newPlanetSpeedX = mouseX;
+                    newPlanetSpeedY = mouseY;
                     addingPlanetMode = true;
                     paused = true;
                 }
@@ -144,14 +162,33 @@ public class Orbits2 implements KeyListener,
             case KeyEvent.VK_E:
                 System.out.println("E");
                 System.out.println("   erase orbits ");
-                for (Planet p: planets)
-                    p.orbitPoints = 0;
+                planets.forEach((p) -> { p.orbitPoints = 0; });
                 panel.repaint();
                 break;
             case KeyEvent.VK_P:
                 System.out.println("P");
                 paused = !paused;
                 System.out.println("   paused " + paused);
+                break;
+            case KeyEvent.VK_UP:
+                System.out.println("up");
+                System.out.println("   scroll up ");
+                shiftY -= 10;
+                break;
+            case KeyEvent.VK_DOWN:
+                System.out.println("down");
+                System.out.println("   scroll down ");
+                shiftY += 10;
+                break;
+            case KeyEvent.VK_LEFT:
+                System.out.println("left");
+                System.out.println("   scroll left ");
+                shiftX -= 10;
+                break;
+            case KeyEvent.VK_RIGHT:
+                System.out.println("right");
+                System.out.println("   scroll right ");
+                shiftX += 10;
                 break;
             default:
                 System.out.println("not implemented");
@@ -170,13 +207,19 @@ public class Orbits2 implements KeyListener,
         mouseX = e.getPoint().x - 1; 
         mouseY = e.getPoint().y - 24;
         
-        // this is only used if addingPlanetMode == true
-        newPlanetSpeedX = mouseX;
-        newPlanetSpeedY = mouseY;
-        velX = (double)(newPlanetSpeedX - newPlanetX) / 50.0;
-        velY = (double)(newPlanetSpeedY - newPlanetY) / 50.0;
+        if (addingPlanetMode) {
+            newPlanetSpeedX = mouseX;
+            newPlanetSpeedY = mouseY;
+            if (abs(newPlanetSpeedX - newPlanetX) >= 10 ||
+                abs(newPlanetSpeedY - newPlanetY) >= 10) {
+                velX = scale * (double)(newPlanetSpeedX - newPlanetX) / 50.0;
+                velY = scale * (double)(newPlanetSpeedY - newPlanetY) / 50.0;
+            } else {
+                velX = 0;
+                velY = 0;
+            }
+        }
     }
-    @Override public void mouseDragged(MouseEvent e) {}
    
     // MouseWheelInterface
     @Override public void mouseWheelMoved(MouseWheelEvent e) {
@@ -203,9 +246,28 @@ public class Orbits2 implements KeyListener,
         }
     }
 
-    @Override public void mousePressed(MouseEvent me) {}
-
-    @Override public void mouseReleased(MouseEvent me) {}
+    int panX, panY;
+    boolean panMode = false;
+    @Override public void mousePressed(MouseEvent me) {
+        if (!addingPlanetMode) {
+            panMode = true;
+            panX = me.getX();
+            panY = me.getY();
+        }
+    }
+    @Override public void mouseDragged(MouseEvent e) {
+        if (panMode) {
+            shiftX += e.getX() - panX;
+            shiftY += e.getY() - panY;
+            panX = e.getX();
+            panY = e.getY();
+        }
+    }
+    @Override public void mouseReleased(MouseEvent me) {
+        if (panMode) {
+            panMode = false;
+        }
+    }
 
     @Override public void mouseEntered(MouseEvent me) {}
 
@@ -221,6 +283,7 @@ public class Orbits2 implements KeyListener,
             gfx.fillRect(0, 0, w, h);
             gfx.setColor(Color.white);
             gfx.drawString("Mouse " + mouseX + " " + mouseY, 10, 10);
+            gfx.drawString(String.format("Scale %.1f", scale), 10, 25);
 
             for (Planet p: planets) {
                 if (debug) {
@@ -237,7 +300,7 @@ public class Orbits2 implements KeyListener,
             
             if (addingPlanetMode) {
                 gfx.setColor(Color.gray);
-                gfx.drawString(String.format("Velocity %.2f %.2f", velX, velY), 10, 25);
+                gfx.drawString(String.format("Velocity %.2f %.2f", velX, velY), 10, 40);
                 gfx.drawLine(newPlanetX, newPlanetY,
                              newPlanetSpeedX, newPlanetSpeedY);
             }
