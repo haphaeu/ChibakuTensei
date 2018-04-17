@@ -224,13 +224,15 @@ public class Orbits2 implements KeyListener,
     // MouseWheelInterface
     @Override public void mouseWheelMoved(MouseWheelEvent e) {
         if (!addingPlanetMode) {
+            int cX = (int)((mouseX-shiftX)*scale);
+            int cY = (int)((mouseY-shiftY)*scale);
             int notches = e.getWheelRotation();
             if (notches > 0)
                 scale *= 1.1;
             else if (notches < 0)
                 scale /= 1.1;
-            shiftX = (2*shiftX + mouseX) / 3;
-            shiftY = (2*shiftY + mouseY) / 3;
+            shiftX = mouseX - (int)(cX/scale);
+            shiftY = mouseY - (int)(cY/scale);
             System.out.println("Rescale " + scale);
             System.out.println(" Shift " + shiftX + " " + shiftY);
         }
