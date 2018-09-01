@@ -15,6 +15,8 @@ import static java.lang.Math.abs;
 import static java.lang.Math.pow;
 import static java.lang.Math.sqrt;
 import java.util.ArrayList;
+import java.util.Random;
+
 
 /**
  *
@@ -30,7 +32,11 @@ public class Orbits2 implements KeyListener,
     
     boolean debug = false;
     boolean paused = false;
-    int timer = 10;
+    boolean showTimers = true;
+    int timer = 50; // ms
+    long updateOrbitTime, updateVelocityTime, checkCollisionsTime, repaintTime; //ns
+    int proc_time;  // ms, time required to process and repaint
+    int frame_time;  // ms, time to process, draw a frame
     
     boolean showOrbits = true;
     boolean addingPlanetMode = false;
@@ -54,20 +60,45 @@ public class Orbits2 implements KeyListener,
         frame.addMouseMotionListener(this);
         frame.addMouseWheelListener(this);
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setSize(1000, 1000);
+        frame.setSize(1920, 1080);
         frame.setResizable(true);
         frame.setVisible(true);
+        rescale();
         initPlanets();
+        paused = true;
         start();
     }
     
     private void initPlanets() {
         System.out.println("initPlanets()");
         
-        rescale();
+        Random rand = new Random();
+        int w = panel.getWidth();
+        int h = panel.getHeight();
+        int numberPlanets = 500;
+        double r, m, rho;
+        double pad = 150.0;
+        double pxmax = 1*w - 2*pad;
+        double pymax = 1*h - 2*pad;
+        double vmin = -1.0;
+        double vmax = 1.0;
         
-
+        for (int i=0; i < numberPlanets; i++) {
+            r = rand.nextDouble() * 2.0 + 1.0;
+            rho = rand.nextDouble() * 0.1 + 0.01;
+            m = 4.0 * rho * pow(r, 3);
+            planets.add(new Planet("nameless", 
+                    pow(scale, 3) * m,  //  mass
+                    scale * r,          // radius
+                    new double[] {scale * (rand.nextDouble() * (vmax - vmin) + vmin),
+                                  scale * (rand.nextDouble() * (vmax - vmin) + vmin)},
+                    new double[] {scale * (pxmax * rand.nextDouble() + pad - shiftX),
+                                  scale * (pymax * rand.nextDouble() + pad - shiftY)},
+                    new Color(rand.nextFloat(), rand.nextFloat(), rand.nextFloat())));
+        }
+        //rescale();
     }
+    
     private void addPlanet() {
         planets.add(new Planet("nameless",
                                100*pow(scale, 3), 
@@ -89,31 +120,46 @@ public class Orbits2 implements KeyListener,
     private void start() {
         System.out.println("start()");
         System.out.println(panel.getWidth() + " " + panel.getHeight());
+        long t0, t1, t2, t3;
         while (true) {
-            
+            t0 = System.nanoTime();
             if (!paused) {
+                
                 // First update the speed of all planets
                 planets.forEach((p) -> {
                     p.updateVelocity(planets);
                 });
+                t1 = System.nanoTime();
+                
                 // and then update their positions
                 planets.forEach((p) -> {
                     p.updateOrbit();
                 });
+                
+                t2 = System.nanoTime();
                 checkCollisions();
+                t3 = System.nanoTime();
+                
+                updateVelocityTime = t1 - t0;
+                updateOrbitTime = t2 - t1;
+                checkCollisionsTime = t3 - t2;
             }
+            
             panel.repaint();
+            
+            proc_time = (int)((System.nanoTime() - t0) / 1e6);
+            
             try {
-                Thread.sleep(timer);
+                Thread.sleep(timer - Math.min(timer, proc_time));
             } catch (InterruptedException ex) {
                 System.out.println("OW NO! WHAT NOW??");
             }
         }
     }
     private void checkCollisions() {
-        for (int i=0; i < planets.size()-1; i++)
+        for  (int i=0; i < planets.size()-1; i++) {
+            Planet pi = planets.get(i);
             for (int j=i+1; j<planets.size(); j++) {
-                Planet pi = planets.get(i);
                 Planet pj = planets.get(j);
                 double dist = sqrt(pow(pi.position[0] - pj.position[0], 2) +
                                    pow(pi.position[1] - pj.position[1], 2));
@@ -127,6 +173,7 @@ public class Orbits2 implements KeyListener,
                         planets.remove(pj);
                     }
             }
+        }
     }
     
     // KeyPressed interface
@@ -146,6 +193,14 @@ public class Orbits2 implements KeyListener,
                     addingPlanetMode = true;
                     paused = true;
                 }
+                break;
+            case KeyEvent.VK_I:
+                System.out.println("I");
+                System.out.println("   re-Initi random planets");
+                boolean pause_state = paused;
+                paused = true;
+                initPlanets();
+                paused = pause_state;
                 break;
             case KeyEvent.VK_R:
                 System.out.println("R");
@@ -169,6 +224,11 @@ public class Orbits2 implements KeyListener,
                 System.out.println("P");
                 paused = !paused;
                 System.out.println("   paused " + paused);
+                break;
+            case KeyEvent.VK_T:
+                System.out.println("T");
+                showTimers = !showTimers;
+                System.out.println("   showTimers " + showTimers);
                 break;
             case KeyEvent.VK_UP:
                 System.out.println("up");
@@ -279,13 +339,11 @@ public class Orbits2 implements KeyListener,
     class MyDrawPanel extends JPanel {
         @Override
         public void paintComponent(Graphics gfx) {
+            long t0 = System.nanoTime();
             int w = this.getWidth();
             int h = this.getHeight();
             
             gfx.fillRect(0, 0, w, h);
-            gfx.setColor(Color.white);
-            gfx.drawString("Mouse " + mouseX + " " + mouseY, 10, 10);
-            gfx.drawString(String.format("Scale %.1f", scale), 10, 25);
 
             for (Planet p: planets) {
                 if (debug) {
@@ -300,18 +358,12 @@ public class Orbits2 implements KeyListener,
                 gfx.fillOval(x, y, 2*r, 2*r);
             }
             
-            if (addingPlanetMode) {
-                gfx.setColor(Color.gray);
-                gfx.drawString(String.format("Velocity %.2f %.2f", velX, velY), 10, 40);
-                gfx.drawLine(newPlanetX, newPlanetY,
-                             newPlanetSpeedX, newPlanetSpeedY);
-            }
-
             if (showOrbits) {
                 //if (debug) System.out.println("Showing orbits");
                 gfx.setColor(Color.gray);
                 for (Planet p: planets) {
                     //if (debug) System.out.println("  " + p.name);
+                    //for (int i=Math.max(0, p.orbitPoints-1000); i < p.orbitPoints-10; i += 10) {
                     for (int i=0; i < p.orbitPoints-1; i++) {
                         //if (debug)
                         //    System.out.println("   " + p.orbit[i][0] + "   " + p.orbit[i][1]);
@@ -322,6 +374,26 @@ public class Orbits2 implements KeyListener,
                     }
                 }
             }
+            
+            gfx.setColor(Color.white);
+            gfx.drawString(String.format("Scale %.1f", scale), 10, 10);
+            gfx.drawString(String.format("Planets %d", planets.size()), 10, 25);
+            if (showTimers) {
+                gfx.drawString("Mouse " + mouseX + " " + mouseY, 10, h-10);
+                gfx.drawString(String.format("fps %.1f", 1000.0/(proc_time+timer)), 10, h - 25);
+                gfx.drawString(String.format("update velocity %5.1fms", updateVelocityTime/1e6), 10, h - 40);
+                gfx.drawString(String.format("update orbits %5.1fms", updateOrbitTime/1e6), 10, h - 55);
+                gfx.drawString(String.format("check collisions %5.1fms", checkCollisionsTime/1e6), 10, h - 70);
+                gfx.drawString(String.format("repaint %5.1fms", repaintTime/1e6), 10, h - 85);
+            }
+            if (addingPlanetMode) {
+                gfx.setColor(Color.gray);
+                gfx.drawString(String.format("Velocity %.2f %.2f", velX, velY), 10, 40);
+                gfx.drawLine(newPlanetX, newPlanetY,
+                             newPlanetSpeedX, newPlanetSpeedY);
+            }
+            
+            repaintTime = System.nanoTime() - t0;
         }
     }
 }
@@ -368,14 +440,9 @@ class Planet {
     }
     
     public void updateVelocity(ArrayList<Planet> planets) {
-        if (debug)
-            System.out.println("Updating velocity of " + name);
         double a;
         for (Planet p: planets) {
             if (p != this) {
-                if (debug)
-                    System.out.println("   with " + p.name);
-                
                 distance = sqrt(pow(position[0] - p.position[0], 2) + 
                                    pow(position[1] - p.position[1], 2));
         
@@ -384,7 +451,7 @@ class Planet {
                 u[1] = -(position[1] - p.position[1]) / distance;
         
                 // Classic Newton mechanic:
-                // F = m1.a = G.m1.m2.a/r² ==> a = G.m2/r²
+                // F = m1.a = G.m1.m2/r² ==> a = G.m2/r²
                 a = G * p.mass / pow(distance, 2);
         
                 velocity[0] += a*u[0]*dt;
