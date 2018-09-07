@@ -312,23 +312,23 @@ public class Orbits2 implements KeyListener,
     boolean panMode = false;
     @Override public void mousePressed(MouseEvent me) {
         if (!addingPlanetMode) {
-            panMode = true;
+            //panMode = true;
             panX = me.getX();
             panY = me.getY();
         }
     }
     @Override public void mouseDragged(MouseEvent e) {
-        if (panMode) {
+        //if (panMode) {
             shiftX += e.getX() - panX;
             shiftY += e.getY() - panY;
             panX = e.getX();
             panY = e.getY();
-        }
+        //}
     }
     @Override public void mouseReleased(MouseEvent me) {
-        if (panMode) {
-            panMode = false;
-        }
+        //if (panMode) {
+        //    panMode = false;
+        //}
     }
 
     @Override public void mouseEntered(MouseEvent me) {}
