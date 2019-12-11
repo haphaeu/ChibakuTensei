@@ -16,6 +16,8 @@ import static java.lang.Math.pow;
 import static java.lang.Math.sqrt;
 import java.util.ArrayList;
 import java.util.Random;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 
 /**
@@ -25,7 +27,8 @@ import java.util.Random;
 public class Orbits2 implements KeyListener, 
                                 MouseListener,
                                 MouseMotionListener, 
-                                MouseWheelListener {
+                                MouseWheelListener,
+                                Runnable {
 
     MyDrawPanel panel;
     ArrayList<Planet> planets = new ArrayList<>();
@@ -44,9 +47,14 @@ public class Orbits2 implements KeyListener,
     double scale;
     int shiftX, shiftY;
     
+    static Thread one;
+    
     public static void main(String[] args) {
         System.out.println("main()");
         Orbits2 orbit = new Orbits2();
+
+        one = new Thread(orbit);
+        one.setName("one");
         orbit.setup();
     }
     
@@ -60,7 +68,7 @@ public class Orbits2 implements KeyListener,
         frame.addMouseMotionListener(this);
         frame.addMouseWheelListener(this);
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setSize(1920, 1080);
+        frame.setSize(800, 600);
         frame.setResizable(true);
         frame.setVisible(true);
         rescale();
@@ -121,20 +129,33 @@ public class Orbits2 implements KeyListener,
         System.out.println("start()");
         System.out.println(panel.getWidth() + " " + panel.getHeight());
         long t0, t1, t2, t3;
+        int i;
+        Planet p;
+        
+        one.start();
+        
         while (true) {
             t0 = System.nanoTime();
             if (!paused) {
                 
                 // First update the speed of all planets
-                planets.forEach((p) -> {
+                for (i=0; i < planets.size(); i++) {
+                    p = planets.get(i);
                     p.updateVelocity(planets);
-                });
+                }
                 t1 = System.nanoTime();
                 
                 // and then update their positions
-                planets.forEach((p) -> {
-                    p.updateOrbit();
-                });
+                
+                for (i=0; i < planets.size(); i++) {
+                    try {
+                        p = planets.get(i);
+                        p.updateOrbit();
+                    } catch (IndexOutOfBoundsException ex) {
+                        ;
+                    }
+                    
+                }
                 
                 t2 = System.nanoTime();
                 checkCollisions();
@@ -156,15 +177,32 @@ public class Orbits2 implements KeyListener,
             }
         }
     }
-    private void checkCollisions() {
-        for  (int i=0; i < planets.size()-1; i++) {
-            Planet pi = planets.get(i);
-            for (int j=i+1; j<planets.size(); j++) {
-                Planet pj = planets.get(j);
-                double dist = sqrt(pow(pi.position[0] - pj.position[0], 2) +
-                                   pow(pi.position[1] - pj.position[1], 2));
+    private synchronized void checkCollisions() {
+        
+        one.notify();
+        System.out.println(one.getState());
+
+        
+    }
+    
+    @Override
+    public synchronized void run() {
+        while (true) {
+            
+            try {
+                one.wait();
+            } catch (InterruptedException ex) {
+                Logger.getLogger(Orbits2.class.getName()).log(Level.SEVERE, null, ex);
+            }
+            
+            for  (int i=0; i < planets.size()-1; i++) {
+                Planet pi = planets.get(i);
+                for (int j=i+1; j<planets.size(); j++) {
+                    Planet pj = planets.get(j);
+                    double dist = sqrt(pow(pi.position[0] - pj.position[0], 2) +
+                                       pow(pi.position[1] - pj.position[1], 2));
                     if (dist < pi.radius + pj.radius) {
-                        System.out.println("Chibaku tensei!");
+                        //System.out.println("Chibaku tensei!");
                         pi.velocity[0] = (pi.velocity[0]*pi.mass + pj.velocity[0] * pj.mass) / (pi.mass + pj.mass);
                         pi.velocity[1] = (pi.velocity[1]*pi.mass + pj.velocity[1] * pj.mass) / (pi.mass + pj.mass);
                         pi.mass += pj.mass;
@@ -172,6 +210,7 @@ public class Orbits2 implements KeyListener,
                         pi.orbitPoints = 0;
                         planets.remove(pj);
                     }
+                }
             }
         }
     }
@@ -345,7 +384,10 @@ public class Orbits2 implements KeyListener,
             
             gfx.fillRect(0, 0, w, h);
 
-            for (Planet p: planets) {
+            Planet p;
+            for (int j=0; j < planets.size(); j++) {
+                p = planets.get(j);
+                        
                 if (debug) {
                     System.out.println("Drawing" + p.name);
                     System.out.println("   pos " + p.position[0] + " " + p.position[1]);
@@ -361,7 +403,8 @@ public class Orbits2 implements KeyListener,
             if (showOrbits) {
                 //if (debug) System.out.println("Showing orbits");
                 gfx.setColor(Color.gray);
-                for (Planet p: planets) {
+                for (int j=0; j<planets.size(); j++) {
+                    p = planets.get(j);
                     //if (debug) System.out.println("  " + p.name);
                     //for (int i=Math.max(0, p.orbitPoints-1000); i < p.orbitPoints-10; i += 10) {
                     for (int i=0; i < p.orbitPoints-1; i++) {
@@ -420,7 +463,7 @@ class Planet {
     
     public Planet(String nm, double m, double r,
                   double[] v, double[] p, Color c) {
-        System.out.println("new Planet() ");
+        //System.out.println("new Planet() ");
         name = nm;
         mass = m;
         radius = r;
@@ -433,15 +476,17 @@ class Planet {
         orbit[orbitPoints][0] = position[0];
         orbit[orbitPoints][1] = position[1];
         orbitPoints++;
-        System.out.println("   Position " + position[0] + " "+ position[1]);
-        System.out.println("   Mass " + mass);
-        System.out.println("   Radius " + radius);
-        System.out.println("   Speed " + velocity[0] + " " + velocity[1]);
+        //System.out.println("   Position " + position[0] + " "+ position[1]);
+        //System.out.println("   Mass " + mass);
+        //System.out.println("   Radius " + radius);
+        //System.out.println("   Speed " + velocity[0] + " " + velocity[1]);
     }
     
     public void updateVelocity(ArrayList<Planet> planets) {
         double a;
-        for (Planet p: planets) {
+        Planet p;
+        for (int i=0; i < planets.size(); i++) {
+            p = planets.get(i);
             if (p != this) {
                 distance = sqrt(pow(position[0] - p.position[0], 2) + 
                                    pow(position[1] - p.position[1], 2));
