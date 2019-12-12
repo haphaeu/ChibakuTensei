@@ -143,6 +143,7 @@ public class ChibakuTensei implements KeyListener,
                 t2 = System.nanoTime();
                 
                 // First update the speed of all planets
+                // Must be called in order ... see comment in updateVelocity()
                 for (i=0; i < planets.size(); i++) {
                     p = planets.get(i);
                     p.updateVelocity(planets);
@@ -485,7 +486,7 @@ public class ChibakuTensei implements KeyListener,
 }
 
 
-class Planet implements {
+class Planet {
     //static final double G = 6.674e-11;
     static final double G = 1.0;
     static double dt = 1;
@@ -532,25 +533,37 @@ class Planet implements {
     }
     
     public void updateVelocity(ArrayList<Planet> planets) {
+        // !!! Must be called in order of index of the array planets !!!
         double a;
         Planet p;
-        for (int i=0; i < planets.size(); i++) {
+        
+        // Improvement here: assuming that updateVelocity will be
+        // called in the order of the indexes, only check the other
+        // planets whose index are higher. 
+        
+        for (int i=planets.indexOf(this)+1; i < planets.size(); i++) {
             p = planets.get(i);
-            if (p != this) {
-                distance = sqrt(pow(position[0] - p.position[0], 2) + 
-                                pow(position[1] - p.position[1], 2));
-        
-                // Unit vector pointing towards the other planet
-                u[0] = -(position[0] - p.position[0]) / distance;
-                u[1] = -(position[1] - p.position[1]) / distance;
-        
-                // Classic Newton mechanic:
-                // F = m1.a = G.m1.m2/r² ==> a = G.m2/r²
-                a = G * p.mass / pow(distance, 2);
-        
-                velocity[0] += a*u[0]*dt;
-                velocity[1] += a*u[1]*dt;
-            }
+            
+            distance = sqrt(pow(position[0] - p.position[0], 2) + 
+                            pow(position[1] - p.position[1], 2));
+
+            // Unit vector pointing towards the other planet
+            u[0] = -(position[0] - p.position[0]) / distance;
+            u[1] = -(position[1] - p.position[1]) / distance;
+
+            // Classic Newton mechanic:
+            // F = m1.a = G.m1.m2/r² ==> a = G.m2/r²
+
+            // Update current planet
+            a = G * p.mass / pow(distance, 2);
+            velocity[0] += a*u[0]*dt;
+            velocity[1] += a*u[1]*dt;
+
+            // Update other planet with lower index, with opposite unit vector -u:
+            // a_other = G * mass / pow() = a * (mass / p.mass) 
+            a *= mass / p.mass;
+            p.velocity[0] -= a*u[0]*dt;
+            p.velocity[1] -= a*u[1]*dt;
         }
     }
    
