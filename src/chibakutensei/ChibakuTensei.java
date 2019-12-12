@@ -16,8 +16,6 @@ import static java.lang.Math.pow;
 import static java.lang.Math.sqrt;
 import java.util.ArrayList;
 import java.util.Random;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 
 /**
@@ -32,7 +30,7 @@ public class ChibakuTensei implements KeyListener,
 
     MyDrawPanel panel;
     ArrayList<Planet> planets = new ArrayList<>();
-    ArrayList<ArrayList<Planet>> collidedPlanetPairs = new ArrayList<ArrayList<Planet>>();
+    ArrayList<ArrayList<Planet>> collidedPlanetPairs = new ArrayList<>();
 
     boolean debug = false;
     boolean paused = false;
@@ -184,6 +182,12 @@ public class ChibakuTensei implements KeyListener,
         if (debug) System.out.println("AAAAAAAAAA Atomic AAAAAAAAAA\n");
     }
     private synchronized void checkCollisions() {
+    //
+    // I'm note sure whether this function is needed. 
+    // This code could go in do Collisions()
+    // It was sort of painfull to make this work and I ended up making a mess
+    // so this architecture may have good changes of improvement.
+    //
         goCheckCollisions = true;
         isThreadLoopDone = false;
         notifyAll();
@@ -208,6 +212,10 @@ public class ChibakuTensei implements KeyListener,
     }
     @Override
     public void run() {
+    // This is the worker function to run in a separated thread.
+    // It's flow is controlled by the helper functions
+    // hold() and done(), which are called by the worker and
+    // either make the thread wait, of flag if as done.
         System.out.println("Thread is running");
         while (true) {
             hold();
@@ -477,7 +485,7 @@ public class ChibakuTensei implements KeyListener,
 }
 
 
-class Planet {
+class Planet implements {
     //static final double G = 6.674e-11;
     static final double G = 1.0;
     static double dt = 1;
@@ -545,6 +553,7 @@ class Planet {
             }
         }
     }
+   
     public void updateOrbit() {
         
         position[0] += velocity[0]*dt; 
