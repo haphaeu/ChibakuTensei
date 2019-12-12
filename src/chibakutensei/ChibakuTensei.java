@@ -32,7 +32,8 @@ public class ChibakuTensei implements KeyListener,
 
     MyDrawPanel panel;
     ArrayList<Planet> planets = new ArrayList<>();
-    
+    ArrayList<ArrayList<Planet>> collidedPlanetPairs = new ArrayList<ArrayList<Planet>>();
+
     boolean debug = false;
     boolean paused = false;
     boolean showTimers = true;
@@ -47,15 +48,14 @@ public class ChibakuTensei implements KeyListener,
     double scale;
     int shiftX, shiftY;
     
-    static Thread one;
+    static Thread thread0;
+    boolean goCheckCollisions = false;
+    boolean isThreadLoopDone = true;
     
     public static void main(String[] args) {
         System.out.println("main()");
-        ChibakuTensei orbit = new ChibakuTensei();
-
-        one = new Thread(orbit);
-        one.setName("one");
-        orbit.setup();
+        ChibakuTensei game = new ChibakuTensei();
+        game.setup();
     }
     
     public void setup() {
@@ -128,22 +128,28 @@ public class ChibakuTensei implements KeyListener,
     private void start() {
         System.out.println("start()");
         System.out.println(panel.getWidth() + " " + panel.getHeight());
-        long t0, t1, t2, t3;
+        long t0, t1, t2, t3, t4;
         int i;
         Planet p;
         
-        one.start();
-        
+        thread0 = new Thread(this);
+        thread0.setName("one");
+        thread0.start();
+       
         while (true) {
             t0 = System.nanoTime();
             if (!paused) {
+                
+                t1 = System.nanoTime();
+                doCollisions();
+                t2 = System.nanoTime();
                 
                 // First update the speed of all planets
                 for (i=0; i < planets.size(); i++) {
                     p = planets.get(i);
                     p.updateVelocity(planets);
                 }
-                t1 = System.nanoTime();
+                t3 = System.nanoTime();
                 
                 // and then update their positions
                 
@@ -151,19 +157,13 @@ public class ChibakuTensei implements KeyListener,
                     try {
                         p = planets.get(i);
                         p.updateOrbit();
-                    } catch (IndexOutOfBoundsException ex) {
-                        ;
-                    }
-                    
+                    } catch (IndexOutOfBoundsException ex) { }
                 }
+                t4 = System.nanoTime();
                 
-                t2 = System.nanoTime();
-                checkCollisions();
-                t3 = System.nanoTime();
-                
-                updateVelocityTime = t1 - t0;
-                updateOrbitTime = t2 - t1;
-                checkCollisionsTime = t3 - t2;
+                checkCollisionsTime = t2 - t1;
+                updateVelocityTime = t3 - t2;
+                updateOrbitTime = t4 - t3;
             }
             
             panel.repaint();
@@ -177,24 +177,40 @@ public class ChibakuTensei implements KeyListener,
             }
         }
     }
-    private synchronized void checkCollisions() {
-        
-        one.notify();
-        System.out.println(one.getState());
-
-        
+    private synchronized void doCollisions() {
+        checkCollisions();
+        removedCollidedPlanets();
     }
-    
-    @Override
-    public synchronized void run() {
-        while (true) {
-            
+    private synchronized void checkCollisions() {
+        System.out.println("Checking collisions...");
+        goCheckCollisions = true;
+        isThreadLoopDone = false;
+        notifyAll();
+        while (!isThreadLoopDone) {
             try {
-                one.wait();
-            } catch (InterruptedException ex) {
-                Logger.getLogger(ChibakuTensei.class.getName()).log(Level.SEVERE, null, ex);
-            }
-            
+                wait();
+            } catch (InterruptedException ex) {}
+        }
+    }
+    private synchronized void hold () {
+        while (!goCheckCollisions) {
+            try {
+                wait();
+            } catch (InterruptedException ex) {}
+        }
+        notifyAll();
+    }
+    private synchronized void done () {
+        isThreadLoopDone = true;
+        goCheckCollisions = false;
+        notifyAll();
+    }
+    @Override
+    public void run() {
+        System.out.println("Thread is running");
+        while (true) {
+            hold();
+            collidedPlanetPairs.clear();
             for  (int i=0; i < planets.size()-1; i++) {
                 Planet pi = planets.get(i);
                 for (int j=i+1; j<planets.size(); j++) {
@@ -202,16 +218,33 @@ public class ChibakuTensei implements KeyListener,
                     double dist = sqrt(pow(pi.position[0] - pj.position[0], 2) +
                                        pow(pi.position[1] - pj.position[1], 2));
                     if (dist < pi.radius + pj.radius) {
+                        ArrayList<Planet> pair = new ArrayList<>();
+                        pair.add(pi);
+                        pair.add(pj);
+                        collidedPlanetPairs.add(pair);
                         //System.out.println("Chibaku tensei!");
-                        pi.velocity[0] = (pi.velocity[0]*pi.mass + pj.velocity[0] * pj.mass) / (pi.mass + pj.mass);
-                        pi.velocity[1] = (pi.velocity[1]*pi.mass + pj.velocity[1] * pj.mass) / (pi.mass + pj.mass);
-                        pi.mass += pj.mass;
-                        pi.radius = pow(pow(pi.radius, 3) + pow(pj.radius, 3), 0.33333333);
-                        pi.orbitPoints = 0;
-                        planets.remove(pj);
                     }
                 }
             }
+            done(); // this will make the thread wait
+        }
+    }
+    private synchronized void removedCollidedPlanets() {
+        Planet pi, pj;
+        ArrayList<Planet> pair;
+        System.out.println("Detected " + collidedPlanetPairs.size() + " collisions.");
+        for (int i=0; i < collidedPlanetPairs.size(); i++) {
+            pair = collidedPlanetPairs.get(i);
+            pi = pair.get(0);
+            pj = pair.get(1);
+            System.out.println("Removing pair " + planets.indexOf(pi) + " and " + planets.indexOf(pj));
+
+            pi.velocity[0] = (pi.velocity[0]*pi.mass + pj.velocity[0] * pj.mass) / (pi.mass + pj.mass);
+            pi.velocity[1] = (pi.velocity[1]*pi.mass + pj.velocity[1] * pj.mass) / (pi.mass + pj.mass);
+            pi.mass += pj.mass;
+            pi.radius = pow(pow(pi.radius, 3) + pow(pj.radius, 3), 0.33333333);
+            pi.orbitPoints = 0;
+            planets.remove(pj);
         }
     }
     
