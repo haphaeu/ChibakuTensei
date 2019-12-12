@@ -178,11 +178,12 @@ public class ChibakuTensei implements KeyListener,
         }
     }
     private synchronized void doCollisions() {
+        if (debug) System.out.println("\nVVVVVVVVVV Atomic VVVVVVVVVV");
         checkCollisions();
         removedCollidedPlanets();
+        if (debug) System.out.println("AAAAAAAAAA Atomic AAAAAAAAAA\n");
     }
     private synchronized void checkCollisions() {
-        System.out.println("Checking collisions...");
         goCheckCollisions = true;
         isThreadLoopDone = false;
         notifyAll();
@@ -210,7 +211,6 @@ public class ChibakuTensei implements KeyListener,
         System.out.println("Thread is running");
         while (true) {
             hold();
-            collidedPlanetPairs.clear();
             for  (int i=0; i < planets.size()-1; i++) {
                 Planet pi = planets.get(i);
                 for (int j=i+1; j<planets.size(); j++) {
@@ -232,13 +232,14 @@ public class ChibakuTensei implements KeyListener,
     private synchronized void removedCollidedPlanets() {
         Planet pi, pj;
         ArrayList<Planet> pair;
-        System.out.println("Detected " + collidedPlanetPairs.size() + " collisions.");
-        for (int i=0; i < collidedPlanetPairs.size(); i++) {
+        int n = collidedPlanetPairs.size();
+        if (n > 0) 
+            if (debug) System.out.println("Detected " + n + " collisions.");
+        for (int i=0; i < n; i++) {
             pair = collidedPlanetPairs.get(i);
             pi = pair.get(0);
             pj = pair.get(1);
-            System.out.println("Removing pair " + planets.indexOf(pi) + " and " + planets.indexOf(pj));
-
+            //System.out.println("  Removing pair " + planets.indexOf(pi) + " and " + planets.indexOf(pj));
             pi.velocity[0] = (pi.velocity[0]*pi.mass + pj.velocity[0] * pj.mass) / (pi.mass + pj.mass);
             pi.velocity[1] = (pi.velocity[1]*pi.mass + pj.velocity[1] * pj.mass) / (pi.mass + pj.mass);
             pi.mass += pj.mass;
@@ -246,6 +247,7 @@ public class ChibakuTensei implements KeyListener,
             pi.orbitPoints = 0;
             planets.remove(pj);
         }
+        collidedPlanetPairs.clear();
     }
     
     // KeyPressed interface
