@@ -1,5 +1,5 @@
 /*
- * Orbits2
+ * ChibakuTensei
  *
  * Planets orbiting around each other, or colliding =)
  *
@@ -7,7 +7,7 @@
  *
  *
  */
-package orbits2;
+package chibakutensei;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
@@ -24,7 +24,7 @@ import java.util.logging.Logger;
  *
  * @author raf
  */
-public class Orbits2 implements KeyListener, 
+public class ChibakuTensei implements KeyListener, 
                                 MouseListener,
                                 MouseMotionListener, 
                                 MouseWheelListener,
@@ -51,7 +51,7 @@ public class Orbits2 implements KeyListener,
     
     public static void main(String[] args) {
         System.out.println("main()");
-        Orbits2 orbit = new Orbits2();
+        ChibakuTensei orbit = new ChibakuTensei();
 
         one = new Thread(orbit);
         one.setName("one");
@@ -192,7 +192,7 @@ public class Orbits2 implements KeyListener,
             try {
                 one.wait();
             } catch (InterruptedException ex) {
-                Logger.getLogger(Orbits2.class.getName()).log(Level.SEVERE, null, ex);
+                Logger.getLogger(ChibakuTensei.class.getName()).log(Level.SEVERE, null, ex);
             }
             
             for  (int i=0; i < planets.size()-1; i++) {
