@@ -488,9 +488,15 @@ class Planet {
     double mass, radius;
     double[] velocity = new double[2];
     double[] position = new double[2];
-    final int size = 5000;
+    
+    final int size = 500;
     double[][] orbit;
     int orbitPoints;
+    
+    // update orbit vector only after a number of time steps
+    int orbitPointSkipIters = 3;
+    int orbitPointCurrentIter = 0;
+    
     Color color;
     
     double[] u = new double[2];
@@ -524,7 +530,7 @@ class Planet {
             p = planets.get(i);
             if (p != this) {
                 distance = sqrt(pow(position[0] - p.position[0], 2) + 
-                                   pow(position[1] - p.position[1], 2));
+                                pow(position[1] - p.position[1], 2));
         
                 // Unit vector pointing towards the other planet
                 u[0] = -(position[0] - p.position[0]) / distance;
@@ -543,25 +549,29 @@ class Planet {
         
         position[0] += velocity[0]*dt; 
         position[1] += velocity[1]*dt;
-        
-        // Check if need to re-allocate orbit arrays
-        if (orbitPoints == orbit.length) {
-            if (debug) System.out.println("Increasing orbit array size...");
-            double[][] tmp = new double[orbit.length + size][2];
-            System.arraycopy(orbit, 0, tmp, 0, orbit.length);
-            orbit = tmp; 
-        }
-        
-        orbit[orbitPoints][0] = position[0];
-        orbit[orbitPoints][1] = position[1];
-        orbitPoints++;
-        
-        if (debug) {
-            System.out.println("Updating orbit of " + name);
-            System.out.println("   Dist " + distance);
-            System.out.println("   u " + u[0] + " " + u[1]);
-            System.out.println("   vel " + velocity[0] + " " + velocity[1]);
-            System.out.println("   pos " + position[0] + " " + position[1]);
+   
+        orbitPointCurrentIter = (orbitPointCurrentIter+1) % orbitPointSkipIters;
+        if (orbitPointCurrentIter == 0) {
+
+            // Check if need to re-allocate orbit arrays
+            if (orbitPoints == orbit.length) {
+                if (true) System.out.println("Increasing orbit array size...");
+                double[][] tmp = new double[orbit.length + size][2];
+                System.arraycopy(orbit, 0, tmp, 0, orbit.length);
+                orbit = tmp; 
+            }
+
+            orbit[orbitPoints][0] = position[0];
+            orbit[orbitPoints][1] = position[1];
+            orbitPoints++;
+
+            if (debug) {
+                System.out.println("Updating orbit of " + name);
+                System.out.println("   Dist " + distance);
+                System.out.println("   u " + u[0] + " " + u[1]);
+                System.out.println("   vel " + velocity[0] + " " + velocity[1]);
+                System.out.println("   pos " + position[0] + " " + position[1]);
+            }
         }
     }
 }
