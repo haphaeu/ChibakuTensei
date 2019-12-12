@@ -16,6 +16,8 @@ import static java.lang.Math.pow;
 import static java.lang.Math.sqrt;
 import java.util.ArrayList;
 import java.util.Random;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 
 
 /**
@@ -35,7 +37,7 @@ public class ChibakuTensei implements KeyListener,
     boolean debug = false;
     boolean paused = false;
     boolean showTimers = true;
-    int timer = 50; // ms
+    int timer = 40; // ms
     long updateOrbitTime, updateVelocityTime, checkCollisionsTime, repaintTime; //ns
     int proc_time;  // ms, time required to process and repaint
     int frame_time;  // ms, time to process, draw a frame
@@ -46,9 +48,14 @@ public class ChibakuTensei implements KeyListener,
     double scale;
     int shiftX, shiftY;
     
-    static Thread thread0;
+    static final int NUM_THREADS = 16;
+    static ArrayList<Thread> threads = new ArrayList<>();
+    
     boolean goCheckCollisions = false;
     boolean isThreadLoopDone = true;
+    
+    private final BlockingQueue<Planet> queue = new LinkedBlockingQueue<>();
+
     
     public static void main(String[] args) {
         System.out.println("main()");
@@ -130,9 +137,15 @@ public class ChibakuTensei implements KeyListener,
         int i;
         Planet p;
         
-        thread0 = new Thread(this);
-        thread0.setName("one");
-        thread0.start();
+        // Instantialize all threads
+        for(i = 0; i < NUM_THREADS; i++) {
+            Thread thread = new Thread(this);
+            thread.setName("Thread" + i);
+            threads.add(thread);
+        }
+        // Start all threads
+        for(Thread thread: threads)
+            thread.start();
        
         while (true) {
             t0 = System.nanoTime();
@@ -178,10 +191,14 @@ public class ChibakuTensei implements KeyListener,
     }
     private synchronized void doCollisions() {
         if (debug) System.out.println("\nVVVVVVVVVV Atomic VVVVVVVVVV");
+        for (Planet p: planets) 
+            try { queue.put(p);
+            } catch (InterruptedException ex) {}
         checkCollisions();
         removedCollidedPlanets();
         if (debug) System.out.println("AAAAAAAAAA Atomic AAAAAAAAAA\n");
     }
+    
     private synchronized void checkCollisions() {
     //
     // I'm note sure whether this function is needed. 
@@ -207,9 +224,11 @@ public class ChibakuTensei implements KeyListener,
         notifyAll();
     }
     private synchronized void done () {
-        isThreadLoopDone = true;
-        goCheckCollisions = false;
-        notifyAll();
+        if (queue.isEmpty()) {
+            isThreadLoopDone = true;
+            goCheckCollisions = false;
+            notifyAll();
+        }
     }
     @Override
     public void run() {
@@ -217,11 +236,15 @@ public class ChibakuTensei implements KeyListener,
     // It's flow is controlled by the helper functions
     // hold() and done(), which are called by the worker and
     // either make the thread wait, of flag if as done.
-        System.out.println("Thread is running");
+        System.out.println(Thread.currentThread().getName() + " is running");
         while (true) {
             hold();
-            for  (int i=0; i < planets.size()-1; i++) {
-                Planet pi = planets.get(i);
+            try {
+                // planet pi comes from the queue
+                Planet pi = queue.take();
+
+                int i = planets.indexOf(pi);
+
                 for (int j=i+1; j<planets.size(); j++) {
                     Planet pj = planets.get(j);
                     double dist = sqrt(pow(pi.position[0] - pj.position[0], 2) +
@@ -234,7 +257,7 @@ public class ChibakuTensei implements KeyListener,
                         //System.out.println("Chibaku tensei!");
                     }
                 }
-            }
+            } catch (InterruptedException ex) {}
             done(); // this will make the thread wait
         }
     }
@@ -432,7 +455,7 @@ public class ChibakuTensei implements KeyListener,
             for (int j=0; j < planets.size(); j++) {
                 p = planets.get(j);
                         
-                if (debug) {
+                if (false && debug) {
                     System.out.println("Drawing" + p.name);
                     System.out.println("   pos " + p.position[0] + " " + p.position[1]);
                     System.out.println("   rad " + p.radius);
