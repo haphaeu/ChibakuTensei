@@ -35,6 +35,7 @@ public class ChibakuTensei implements KeyListener,
     ArrayList<ArrayList<Planet>> collidedPlanetPairs = new ArrayList<>();
 
     boolean debug = false;
+    
     boolean paused = false;
     boolean showTimers = true;
     int timer = 40; // ms
@@ -48,7 +49,7 @@ public class ChibakuTensei implements KeyListener,
     double scale;
     int shiftX, shiftY;
     
-    static final int NUM_THREADS = 16;
+    static final int NUM_THREADS = 8;
     static ArrayList<Thread> threads = new ArrayList<>();
     
     boolean goCheckCollisions = false;
@@ -82,15 +83,26 @@ public class ChibakuTensei implements KeyListener,
         start();
     }
     
-    private void initPlanets() {
-        System.out.println("initPlanets()");
+    private synchronized void initPlanets() {
+        System.out.println("initPlanets() attempt");
+        
+        // Not sure if this is enough to make sure new planets are
+        // not added while checkCollisions is trying to delete
+        // collided planets...
+        // Note that nothing is added to the checkCollisions thread.
+        // It could use something like flag initingPlanets there ...
+        while (goCheckCollisions)
+            try { wait(); }
+            catch (InterruptedException ex) { }
+        
+        System.out.println("initPlanets() going");
         
         Random rand = new Random();
         int w = panel.getWidth();
         int h = panel.getHeight();
-        int numberPlanets = 500;
+        int numberPlanets = 300;
         double r, m, rho;
-        double pad = 150.0;
+        double pad = 50.0;
         double pxmax = 1*w - 2*pad;
         double pymax = 1*h - 2*pad;
         double vmin = -1.0;
@@ -109,17 +121,18 @@ public class ChibakuTensei implements KeyListener,
                                   scale * (pymax * rand.nextDouble() + pad - shiftY)},
                     new Color(rand.nextFloat(), rand.nextFloat(), rand.nextFloat())));
         }
-        //rescale();
+
     }
     
     private void addPlanet() {
+        Random rand = new Random();
         planets.add(new Planet("nameless",
                                100*pow(scale, 3), 
                                scale*10,
                                new double[] {velX, velY}, 
                                new double[] {(newPlanetX-shiftX)*scale,
                                              (newPlanetY-shiftY)*scale},
-                               Color.blue));
+                               new Color(rand.nextFloat(), rand.nextFloat(), rand.nextFloat())));
     }
     
     private void rescale() {
@@ -144,8 +157,7 @@ public class ChibakuTensei implements KeyListener,
             threads.add(thread);
         }
         // Start all threads
-        for(Thread thread: threads)
-            thread.start();
+        threads.forEach((thread) -> {thread.start();});
        
         while (true) {
             t0 = System.nanoTime();
@@ -191,11 +203,15 @@ public class ChibakuTensei implements KeyListener,
     }
     private synchronized void doCollisions() {
         if (debug) System.out.println("\nVVVVVVVVVV Atomic VVVVVVVVVV");
-        for (Planet p: planets) 
-            try { queue.put(p);
-            } catch (InterruptedException ex) {}
-        checkCollisions();
-        removedCollidedPlanets();
+        if (planets.size() > 1 ) {
+            planets.forEach((p) -> {
+                try { 
+                    queue.put(p);
+                } catch (InterruptedException ex) {}
+            });
+            checkCollisions();
+            removedCollidedPlanets();
+        }
         if (debug) System.out.println("AAAAAAAAAA Atomic AAAAAAAAAA\n");
     }
     
@@ -221,14 +237,14 @@ public class ChibakuTensei implements KeyListener,
                 wait();
             } catch (InterruptedException ex) {}
         }
-        notifyAll();
+        //notifyAll();
     }
     private synchronized void done () {
         if (queue.isEmpty()) {
             isThreadLoopDone = true;
             goCheckCollisions = false;
             notifyAll();
-        }
+        } 
     }
     @Override
     public void run() {
@@ -242,11 +258,13 @@ public class ChibakuTensei implements KeyListener,
             try {
                 // planet pi comes from the queue
                 Planet pi = queue.take();
-
+                if (pi == null) {
+                    System.out.println("pi is empty");
+                }
                 int i = planets.indexOf(pi);
-
                 for (int j=i+1; j<planets.size(); j++) {
                     Planet pj = planets.get(j);
+                    if (pj == null) continue;
                     double dist = sqrt(pow(pi.position[0] - pj.position[0], 2) +
                                        pow(pi.position[1] - pj.position[1], 2));
                     if (dist < pi.radius + pj.radius) {
@@ -269,8 +287,10 @@ public class ChibakuTensei implements KeyListener,
             if (debug) System.out.println("Detected " + n + " collisions.");
         for (int i=0; i < n; i++) {
             pair = collidedPlanetPairs.get(i);
+            if (pair == null) continue;
             pi = pair.get(0);
             pj = pair.get(1);
+            if (pi == null || pj == null) continue;
             //System.out.println("  Removing pair " + planets.indexOf(pi) + " and " + planets.indexOf(pj));
             pi.velocity[0] = (pi.velocity[0]*pi.mass + pj.velocity[0] * pj.mass) / (pi.mass + pj.mass);
             pi.velocity[1] = (pi.velocity[1]*pi.mass + pj.velocity[1] * pj.mass) / (pi.mass + pj.mass);
@@ -302,7 +322,7 @@ public class ChibakuTensei implements KeyListener,
                 break;
             case KeyEvent.VK_I:
                 System.out.println("I");
-                System.out.println("   re-Initi random planets");
+                System.out.println("   re-Init random planets");
                 boolean pause_state = paused;
                 paused = true;
                 initPlanets();
@@ -495,6 +515,20 @@ public class ChibakuTensei implements KeyListener,
                 gfx.drawString(String.format("update orbits %5.1fms", updateOrbitTime/1e6), 10, h - 55);
                 gfx.drawString(String.format("check collisions %5.1fms", checkCollisionsTime/1e6), 10, h - 70);
                 gfx.drawString(String.format("repaint %5.1fms", repaintTime/1e6), 10, h - 85);
+                
+                int i;
+                for (i = 0; i < Integer.min(10, planets.size()); i++) {
+                    p = planets.get(i);
+                    gfx.setColor(p.color);
+                    gfx.drawString(String.format("v %.1f vx %.1f vy %.1f", 
+                                                 sqrt(pow(p.velocity[0],2)+pow(p.velocity[1],2)), 
+                                                 p.velocity[0], 
+                                                 p.velocity[1]), 
+                                   w-130,
+                                   h-10-i*15);
+                }
+                gfx.setColor(Color.white);
+                gfx.drawString("Planets Velocities", w-130, h-10-i*15);
             }
             if (addingPlanetMode) {
                 gfx.setColor(Color.gray);
@@ -566,6 +600,11 @@ class Planet {
         
         for (int i=planets.indexOf(this)+1; i < planets.size(); i++) {
             p = planets.get(i);
+            
+            if (p == null) {
+                System.out.println("p is empty");
+                continue;
+            }
             
             distance = sqrt(pow(position[0] - p.position[0], 2) + 
                             pow(position[1] - p.position[1], 2));
