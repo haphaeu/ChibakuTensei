@@ -19,7 +19,6 @@ import java.util.Random;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
-
 /**
  *
  * @author raf
@@ -33,12 +32,14 @@ public class ChibakuTensei implements KeyListener,
     MyDrawPanel panel;
     ArrayList<Planet> planets = new ArrayList<>();
     ArrayList<ArrayList<Planet>> collidedPlanetPairs = new ArrayList<>();
+    
+    PlanetsUpdateVelocity planetsUpdateVelocity;
 
     boolean debug = false;
     
     boolean paused = false;
     boolean showTimers = true;
-    int timer = 40; // ms
+    int timer = 30; // ms
     long updateOrbitTime, updateVelocityTime, checkCollisionsTime, repaintTime; //ns
     int proc_time;  // ms, time required to process and repaint
     int frame_time;  // ms, time to process, draw a frame
@@ -49,24 +50,34 @@ public class ChibakuTensei implements KeyListener,
     double scale;
     int shiftX, shiftY;
     
-    static final int NUM_THREADS = 8;
+    int numThreads = 8;
     static ArrayList<Thread> threads = new ArrayList<>();
     
     boolean goCheckCollisions = false;
     boolean isThreadLoopDone = true;
+    boolean initingPlanets = false;
     
     private final BlockingQueue<Planet> queue = new LinkedBlockingQueue<>();
 
     
     public static void main(String[] args) {
         System.out.println("main()");
+        if (args.length > 1) {
+            System.out.println("  args:");
+            for(String s: args)
+                System.out.println("  " + s);
+        }
         ChibakuTensei game = new ChibakuTensei();
+        
+        if (args.length > 0) 
+            game.numThreads = Integer.parseInt(args[0]);
+        
         game.setup();
     }
     
     public void setup() {
         System.out.println("setup()");
-        JFrame frame = new JFrame("Orbits");
+        JFrame frame = new JFrame("Chibaku Tensei");
         panel = new MyDrawPanel();
         frame.getContentPane().add(panel);
         frame.addKeyListener(this);
@@ -78,33 +89,30 @@ public class ChibakuTensei implements KeyListener,
         frame.setResizable(true);
         frame.setVisible(true);
         rescale();
+        planetsUpdateVelocity = new PlanetsUpdateVelocity(this, numThreads);
         initPlanets();
         paused = true;
         start();
     }
     
     private synchronized void initPlanets() {
-        System.out.println("initPlanets() attempt");
+        System.out.println("initPlanets()");
         
-        // Not sure if this is enough to make sure new planets are
-        // not added while checkCollisions is trying to delete
-        // collided planets...
-        // Note that nothing is added to the checkCollisions thread.
-        // It could use something like flag initingPlanets there ...
-        while (goCheckCollisions)
+        while (goCheckCollisions || planetsUpdateVelocity.goUpdateVelocities)
             try { wait(); }
             catch (InterruptedException ex) { }
         
-        System.out.println("initPlanets() going");
+        initingPlanets = true;
+        notifyAll();
         
         Random rand = new Random();
         int w = panel.getWidth();
         int h = panel.getHeight();
-        int numberPlanets = 300;
+        int numberPlanets = 5000;
         double r, m, rho;
         double pad = 50.0;
-        double pxmax = 1*w - 2*pad;
-        double pymax = 1*h - 2*pad;
+        double pxmax = 5*w - 2*pad;
+        double pymax = 5*h - 2*pad;
         double vmin = -1.0;
         double vmax = 1.0;
         
@@ -121,7 +129,9 @@ public class ChibakuTensei implements KeyListener,
                                   scale * (pymax * rand.nextDouble() + pad - shiftY)},
                     new Color(rand.nextFloat(), rand.nextFloat(), rand.nextFloat())));
         }
-
+        
+        initingPlanets = false;
+        notifyAll();
     }
     
     private void addPlanet() {
@@ -151,7 +161,7 @@ public class ChibakuTensei implements KeyListener,
         Planet p;
         
         // Instantialize all threads
-        for(i = 0; i < NUM_THREADS; i++) {
+        for(i = 0; i < numThreads; i++) {
             Thread thread = new Thread(this);
             thread.setName("Thread" + i);
             threads.add(thread);
@@ -160,7 +170,7 @@ public class ChibakuTensei implements KeyListener,
         threads.forEach((thread) -> {thread.start();});
        
         while (true) {
-            t0 = System.nanoTime();
+            t0 = t1 = t2 = t3 = t4 = System.nanoTime();
             if (!paused) {
                 
                 t1 = System.nanoTime();
@@ -168,11 +178,7 @@ public class ChibakuTensei implements KeyListener,
                 t2 = System.nanoTime();
                 
                 // First update the speed of all planets
-                // Must be called in order ... see comment in updateVelocity()
-                for (i=0; i < planets.size(); i++) {
-                    p = planets.get(i);
-                    p.updateVelocity(planets);
-                }
+                planetsUpdateVelocity.updateVelocities();
                 t3 = System.nanoTime();
                 
                 // and then update their positions
@@ -185,10 +191,11 @@ public class ChibakuTensei implements KeyListener,
                 }
                 t4 = System.nanoTime();
                 
-                checkCollisionsTime = t2 - t1;
-                updateVelocityTime = t3 - t2;
-                updateOrbitTime = t4 - t3;
             }
+            
+            checkCollisionsTime = t2 - t1;
+            updateVelocityTime = t3 - t2;
+            updateOrbitTime = t4 - t3;
             
             panel.repaint();
             
@@ -196,9 +203,7 @@ public class ChibakuTensei implements KeyListener,
             
             try {
                 Thread.sleep(timer - Math.min(timer, proc_time));
-            } catch (InterruptedException ex) {
-                System.out.println("OW NO! WHAT NOW??");
-            }
+            } catch (InterruptedException ex) { }
         }
     }
     private synchronized void doCollisions() {
@@ -232,7 +237,7 @@ public class ChibakuTensei implements KeyListener,
         }
     }
     private synchronized void hold () {
-        while (!goCheckCollisions) {
+        while (!goCheckCollisions || initingPlanets) {
             try {
                 wait();
             } catch (InterruptedException ex) {}
@@ -305,8 +310,17 @@ public class ChibakuTensei implements KeyListener,
     // KeyPressed interface
     int newPlanetX, newPlanetY;
     @Override
-    public void keyPressed(KeyEvent ev) {
+    public synchronized void keyPressed(KeyEvent ev) {
         System.out.print("Key pressed: ");
+        
+        if (goCheckCollisions || planetsUpdateVelocity.goUpdateVelocities) {
+            try {
+                System.out.println("Key press blocked... waiting: ");
+                wait();
+            } catch (InterruptedException ex) { }
+        }
+        
+        
         switch (ev.getKeyCode()) {
             case KeyEvent.VK_A:
                 if (!addingPlanetMode) {
@@ -510,7 +524,7 @@ public class ChibakuTensei implements KeyListener,
             gfx.drawString(String.format("Planets %d", planets.size()), 10, 25);
             if (showTimers) {
                 gfx.drawString("Mouse " + mouseX + " " + mouseY, 10, h-10);
-                gfx.drawString(String.format("fps %.1f", 1000.0/(proc_time+timer)), 10, h - 25);
+                gfx.drawString(String.format("fps %.1f", 1000.0/Math.max(proc_time,timer)), 10, h - 25);
                 gfx.drawString(String.format("update velocity %5.1fms", updateVelocityTime/1e6), 10, h - 40);
                 gfx.drawString(String.format("update orbits %5.1fms", updateOrbitTime/1e6), 10, h - 55);
                 gfx.drawString(String.format("check collisions %5.1fms", checkCollisionsTime/1e6), 10, h - 70);
@@ -568,6 +582,7 @@ class Planet {
     double[] u = new double[2];
     double distance;
     
+    
     public Planet(String nm, double m, double r,
                   double[] v, double[] p, Color c) {
         //System.out.println("new Planet() ");
@@ -587,46 +602,6 @@ class Planet {
         //System.out.println("   Mass " + mass);
         //System.out.println("   Radius " + radius);
         //System.out.println("   Speed " + velocity[0] + " " + velocity[1]);
-    }
-    
-    public void updateVelocity(ArrayList<Planet> planets) {
-        // !!! Must be called in order of index of the array planets !!!
-        double a;
-        Planet p;
-        
-        // Improvement here: assuming that updateVelocity will be
-        // called in the order of the indexes, only check the other
-        // planets whose index are higher. 
-        
-        for (int i=planets.indexOf(this)+1; i < planets.size(); i++) {
-            p = planets.get(i);
-            
-            if (p == null) {
-                System.out.println("p is empty");
-                continue;
-            }
-            
-            distance = sqrt(pow(position[0] - p.position[0], 2) + 
-                            pow(position[1] - p.position[1], 2));
-
-            // Unit vector pointing towards the other planet
-            u[0] = -(position[0] - p.position[0]) / distance;
-            u[1] = -(position[1] - p.position[1]) / distance;
-
-            // Classic Newton mechanic:
-            // F = m1.a = G.m1.m2/r² ==> a = G.m2/r²
-
-            // Update current planet
-            a = G * p.mass / pow(distance, 2);
-            velocity[0] += a*u[0]*dt;
-            velocity[1] += a*u[1]*dt;
-
-            // Update other planet with lower index, with opposite unit vector -u:
-            // a_other = G * mass / pow() = a * (mass / p.mass) 
-            a *= mass / p.mass;
-            p.velocity[0] -= a*u[0]*dt;
-            p.velocity[1] -= a*u[1]*dt;
-        }
     }
    
     public void updateOrbit() {
@@ -660,3 +635,115 @@ class Planet {
     }
 }
 
+class PlanetsUpdateVelocity implements Runnable {
+    
+    boolean debug = false;
+    double G = 1.0, dt = 1.0;
+    ChibakuTensei owner;
+    ArrayList<Planet> planets;
+    int numThreads = 32;
+    static ArrayList<Thread> threads = new ArrayList<>();
+    boolean goUpdateVelocities = false;
+    boolean isThreadLoopDone = true;
+    private final BlockingQueue<Planet> queue = new LinkedBlockingQueue<>();
+    
+    public PlanetsUpdateVelocity (ChibakuTensei _owner, int nThreads) {
+        owner = _owner;
+        planets = owner.planets;
+        if (nThreads > 0)
+            numThreads = nThreads;
+        // Instantialize all threads
+        for(int i = 0; i < numThreads; i++) {
+            Thread thread = new Thread(this);
+            thread.setName("Velocity Thread" + i);
+            threads.add(thread);
+        }
+        // Start all threads
+        threads.forEach((thread) -> {thread.start();});
+    }
+    
+    public synchronized void updateVelocities() {
+        if (debug) System.out.println("\nVVVVVVVVVV Atomic velocities VVVVVVVVVV");
+        
+        if (planets.size() > 0) {
+           
+            planets.forEach((p) -> {
+                try { 
+                    queue.put(p);
+                } catch (InterruptedException ex) {}
+            });
+            
+            goUpdateVelocities = true;
+            isThreadLoopDone = false;
+            notifyAll();
+
+            while (!isThreadLoopDone) {
+                try {
+                    wait();
+                } catch (InterruptedException ex) {}
+            }
+        }
+        
+        if (debug) System.out.println("AAAAAAAAAA Atomic velocities AAAAAAAAAA\n");
+    }
+    
+    private synchronized void hold () {
+        while (!goUpdateVelocities || owner.initingPlanets) {
+            try {
+                wait();
+            } catch (InterruptedException ex) {}
+        }
+    }
+    private synchronized void done () {
+        if (queue.isEmpty()) {
+            isThreadLoopDone = true;
+            goUpdateVelocities = false;
+            notifyAll();
+        } 
+    }
+    @Override
+    public void run() {
+        System.out.println(Thread.currentThread().getName() + " is running");
+        
+        double a, distance;
+        double[] u = new double[2];
+        int i, j;
+        Planet pi, pj;
+        
+        while (true) {
+            hold();
+            try {
+                // planet pi comes from the queue
+                pi = queue.take();
+                i = planets.indexOf(pi);
+                
+                for (j = i+1; j < planets.size(); j++) {
+
+                    pj = planets.get(j);
+                    
+                    distance = sqrt(pow(pi.position[0] - pj.position[0], 2) + 
+                                    pow(pi.position[1] - pj.position[1], 2));
+
+                    // Unit vector pointing towards the other planet
+                    u[0] = -(pi.position[0] - pj.position[0]) / distance;
+                    u[1] = -(pi.position[1] - pj.position[1]) / distance;
+
+                    // Classic Newton mechanic:
+                    // F = m1.a = G.m1.m2/r² ==> a = G.m2/r²
+
+                    // Update current planet
+                    a = G * pj.mass / pow(distance, 2);
+                    pi.velocity[0] += a*u[0]*dt;
+                    pi.velocity[1] += a*u[1]*dt;
+
+                    // Update other planet with lower index, with opposite unit vector -u:
+                    // a_j = G * pi.mass / pow() = a * (pi.mass / pj.mass) 
+                    a *= pi.mass / pj.mass;
+                    pj.velocity[0] -= a*u[0]*dt;
+                    pj.velocity[1] -= a*u[1]*dt;
+                }
+            } catch (InterruptedException ex) {}
+            done(); // this will make the thread wait
+        }
+    }
+}
