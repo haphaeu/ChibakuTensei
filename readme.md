@@ -6,11 +6,11 @@ The solver uses classical Newtonian mechanics.
 
 # Game
 
-  * p pause
-  * a add planet with velocity vector
-  * i insert lots of planets at once
-  * o toggle show orbits
-  * e erase orbits
+  * `p` pause
+  * `a` add planet with velocity vector
+  * `i` insert lots of planets at once
+  * `o` toggle show orbits
+  * `e` erase orbits
 
 ![Interface](screenshot.png)
 
