@@ -44,12 +44,16 @@ public class ChibakuTensei implements KeyListener,
     boolean showTimers = true;
     int timer = 17; // ms
     long updateOrbitTime, updateVelocityTime, checkCollisionsTime, repaintTime; // ns
-    int proc_time; // ms, time required to process and repaint
+    int proc_time; // ms, time required to process
     int frame_time; // ms, time to process, draw a frame
 
     boolean showOrbits = true;
-    boolean addingPlanetMode = false;
     boolean removeCollidedPlanets = true;
+
+    // flags used when adding new planets
+    boolean addingPlanetMode = false;
+    boolean addingPlanetLocation = false;
+    boolean addingPlanetRadius = false;
 
     double scale;
     int shiftX, shiftY;
@@ -115,12 +119,12 @@ public class ChibakuTensei implements KeyListener,
         int h = panel.getHeight();
         double r, m, rho;
         double pad = 50.0;
-        double pxmax = w - 2 * pad;
-        double pymax = h - 2 * pad;
+        double pxmax = 4 * w - 2 * pad;
+        double pymax = 4 * h - 2 * pad;
         double vmin = -0.5;
         double vmax = 0.5;
 
-        int numberPlanets = 5;
+        int numberPlanets = 500;
 
         for (int i = 0; i < numberPlanets; i++) {
             r = rand.nextDouble() * 5.0 + 3.0;
@@ -131,8 +135,8 @@ public class ChibakuTensei implements KeyListener,
                     scale * r, // radius
                     new double[] { scale * (rand.nextDouble() * (vmax - vmin) + vmin),
                             scale * (rand.nextDouble() * (vmax - vmin) + vmin) },
-                    new double[] { scale * (pxmax * rand.nextDouble() + pad - shiftX),
-                            scale * (pymax * rand.nextDouble() + pad - shiftY) },
+                    new double[] { scale * (pxmax * (rand.nextDouble() - 0.5) + pad - shiftX),
+                            scale * (pymax * (rand.nextDouble() - 0.5) + pad - shiftY) },
                     new Color(rand.nextFloat(), rand.nextFloat(), rand.nextFloat())));
         }
 
@@ -142,9 +146,10 @@ public class ChibakuTensei implements KeyListener,
 
     private void addPlanet() {
         Random rand = new Random();
+        int scaled_radius = (int) (scale * newPlanetRadius);
         planets.add(new Planet("nameless",
-                100 * pow(scale, 3),
-                scale * 10,
+                pow(scaled_radius, 3),
+                scaled_radius,
                 new double[] { velX, velY },
                 new double[] { (newPlanetX - shiftX) * scale,
                         (newPlanetY - shiftY) * scale },
@@ -426,11 +431,8 @@ public class ChibakuTensei implements KeyListener,
                 if (!addingPlanetMode) {
                     System.out.println("A");
                     System.out.println("   adding planet");
-                    newPlanetX = mouseX;
-                    newPlanetY = mouseY;
-                    newPlanetSpeedX = mouseX;
-                    newPlanetSpeedY = mouseY;
                     addingPlanetMode = true;
+                    addingPlanetLocation = true;
                     paused = true;
                 }
                 break;
@@ -522,6 +524,7 @@ public class ChibakuTensei implements KeyListener,
     // MouseMotionListener interface
     int mouseX, mouseY;
     int newPlanetSpeedX, newPlanetSpeedY;
+    int newPlanetRadius;
     double velX, velY;
 
     @Override
@@ -530,15 +533,24 @@ public class ChibakuTensei implements KeyListener,
         mouseY = e.getPoint().y - 24;
 
         if (addingPlanetMode) {
-            newPlanetSpeedX = mouseX;
-            newPlanetSpeedY = mouseY;
-            if (abs(newPlanetSpeedX - newPlanetX) >= 10 ||
-                    abs(newPlanetSpeedY - newPlanetY) >= 10) {
-                velX = scale * (double) (newPlanetSpeedX - newPlanetX) / 50.0;
-                velY = scale * (double) (newPlanetSpeedY - newPlanetY) / 50.0;
+            if (addingPlanetLocation) {
+                newPlanetX = mouseX;
+                newPlanetY = mouseY;
+                newPlanetSpeedX = mouseX;
+                newPlanetSpeedY = mouseY;
+            } else if (addingPlanetRadius) {
+                newPlanetRadius = (int) sqrt(pow(newPlanetX - mouseX, 2) + pow(newPlanetY - mouseY, 2));
             } else {
-                velX = 0;
-                velY = 0;
+                newPlanetSpeedX = mouseX;
+                newPlanetSpeedY = mouseY;
+                if (abs(newPlanetSpeedX - newPlanetX) >= 10 ||
+                        abs(newPlanetSpeedY - newPlanetY) >= 10) {
+                    velX = scale * (double) (newPlanetSpeedX - newPlanetX) / 50.0;
+                    velY = scale * (double) (newPlanetSpeedY - newPlanetY) / 50.0;
+                } else {
+                    velX = 0;
+                    velY = 0;
+                }
             }
         }
     }
@@ -566,9 +578,16 @@ public class ChibakuTensei implements KeyListener,
     @Override
     public void mouseClicked(MouseEvent me) {
         if (addingPlanetMode) {
-            addingPlanetMode = false;
-            paused = false;
-            addPlanet();
+            if (addingPlanetLocation) {
+                addingPlanetLocation = false;
+                addingPlanetRadius = true;
+            } else if (addingPlanetRadius) {
+                addingPlanetRadius = false;
+            } else {
+                addingPlanetMode = false;
+                paused = false;
+                addPlanet();
+            }
         }
     }
 
@@ -660,7 +679,8 @@ public class ChibakuTensei implements KeyListener,
                 gfx.drawString(String.format("update velocity %5.1fms", updateVelocityTime / 1e6), 10, h - 40);
                 gfx.drawString(String.format("update orbits %5.1fms", updateOrbitTime / 1e6), 10, h - 55);
                 gfx.drawString(String.format("check collisions %5.1fms", checkCollisionsTime / 1e6), 10, h - 70);
-                gfx.drawString(String.format("repaint %5.1fms", repaintTime / 1e6), 10, h - 85);
+                gfx.drawString(String.format("repaint %5.1fms", repaintTime / 1e6), 10, h - 100);
+                gfx.drawString(String.format("tot proc %dms", proc_time), 10, h - 85);
 
                 int i;
                 for (i = 0; i < Integer.min(10, planets.size()); i++) {
@@ -678,9 +698,17 @@ public class ChibakuTensei implements KeyListener,
             }
             if (addingPlanetMode) {
                 gfx.setColor(Color.gray);
-                gfx.drawString(String.format("Velocity %.2f %.2f", velX, velY), 10, 40);
-                gfx.drawLine(newPlanetX, newPlanetY,
-                        newPlanetSpeedX, newPlanetSpeedY);
+                if (addingPlanetLocation)
+                    gfx.drawString("Choose planet location...", 10, 80);
+                else if (addingPlanetRadius) {
+                    gfx.drawString("Choose planet radius...", 10, 80);
+                    gfx.drawOval(newPlanetX - newPlanetRadius, newPlanetY - newPlanetRadius,
+                            2 * newPlanetRadius, 2 * newPlanetRadius);
+                } else {
+                    gfx.drawString(String.format("Velocity %.2f %.2f", velX, velY), 10, 80);
+                    gfx.drawLine(newPlanetX, newPlanetY,
+                            newPlanetSpeedX, newPlanetSpeedY);
+                }
             }
 
             repaintTime = System.nanoTime() - t0;
